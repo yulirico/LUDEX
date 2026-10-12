@@ -102,7 +102,7 @@ router.post('/level/:id/advance-stage', asyncHandler(async (req, res) => {
   const nextStage = STAGE_ORDER[Math.min(currentIdx + 1, STAGE_ORDER.length - 1)];
   const nowCompleted = nextStage === 'done' ? 1 : prog.completed;
 
-  await db.prepare('UPDATE student_progress SET stage = ?, completed = ?, updated_at = datetime(\'now\') WHERE user_id = ? AND level_id = ?')
+  await db.prepare('UPDATE student_progress SET stage = ?, completed = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND level_id = ?')
     .run(nextStage, nowCompleted, req.user.id, level.id);
 
   let unlockedNext = null;
