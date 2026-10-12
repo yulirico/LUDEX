@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const progressRoutes = require('./routes/progress');
 const teacherRoutes = require('./routes/teacher');
 const adminRoutes = require('./routes/admin');
+const db = require('./db');
 
 const app = express();
 app.use(cors());
@@ -35,4 +36,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Ludex backend escuchando en el puerto ${PORT}`));
+db.initialize()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Ludex backend escuchando en el puerto ${PORT}`));
+  })
+  .catch(async error => {
+    console.error('No se pudo iniciar la base de datos PostgreSQL:', error);
+    await db.close();
+    process.exitCode = 1;
+  });

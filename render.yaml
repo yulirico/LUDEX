@@ -9,8 +9,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20.19.0
-      - key: DB_PATH
-        value: /tmp/ludex.db
+      - key: DATABASE_URL
+        sync: false
       - key: ADMIN_PASSWORD
         generateValue: true
       - key: JWT_SECRET

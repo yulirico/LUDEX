@@ -1,25 +1,28 @@
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 
-function upsertUser(username, fullName, role, group, password = 'ludex123') {
-  const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+async function upsertUser(username, fullName, role, group, password = 'ludex123') {
+  const exists = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (exists) return exists.id;
   const hash = bcrypt.hashSync(password, 10);
-  const info = db.prepare(
-    'INSERT INTO users (username, password_hash, full_name, role, group_name) VALUES (?,?,?,?,?)'
+  const info = await db.prepare(
+    'INSERT INTO users (username, password_hash, full_name, role, group_name) VALUES (?,?,?,?,?) RETURNING id'
   ).run(username, hash, fullName, role, group || null);
   return info.lastInsertRowid;
 }
 
+async function main() {
+await db.initialize();
+
 // --- usuarios de ejemplo (contraseña para todos: ludex123) ---
-upsertUser('admin', 'Administrador Ludex', 'admin', null, process.env.ADMIN_PASSWORD || 'ludex123');
-upsertUser('docente.6a', 'Wilfer Escalante', 'teacher', '6-A');
-upsertUser('ana.martinez', 'Ana Martínez', 'student', '6-A');
-upsertUser('luis.torres', 'Luis Torres', 'student', '6-A');
+await upsertUser('admin', 'Administrador Ludex', 'admin', null, process.env.ADMIN_PASSWORD || 'ludex123');
+await upsertUser('docente.6a', 'Wilfer Escalante', 'teacher', '6-A');
+await upsertUser('ana.martinez', 'Ana Martínez', 'student', '6-A');
+await upsertUser('luis.torres', 'Luis Torres', 'student', '6-A');
 
 // --- juegos ---
-db.prepare("INSERT OR IGNORE INTO games (id, name) VALUES ('chess','Ajedrez')").run();
-db.prepare("INSERT OR IGNORE INTO games (id, name) VALUES ('domino','Dominó')").run();
+await db.prepare("INSERT INTO games (id, name) VALUES ('chess','Ajedrez') ON CONFLICT DO NOTHING").run();
+await db.prepare("INSERT INTO games (id, name) VALUES ('domino','Dominó') ON CONFLICT DO NOTHING").run();
 
 // --- niveles de ajedrez ---
 const chessLevels = [
@@ -36,10 +39,13 @@ const chessLevels = [
     math_connection: 'Desde el centro del tablero el caballo puede llegar a 8 casillas distintas. Desde una esquina, ¿a cuántas llega? Compara los dos resultados.'
   }
 ];
-const insLevel = db.prepare(`INSERT OR IGNORE INTO levels
+const insLevel = db.prepare(`INSERT INTO levels
   (id, game_id, order_index, title, lesson_title, lesson_body, math_connection)
-  VALUES (@id,'chess',@order_index,@title,@lesson_title,@lesson_body,@math_connection)`);
-chessLevels.forEach(l => insLevel.run(l));
+  VALUES (?,'chess',?,?,?,?,?)
+  ON CONFLICT DO NOTHING`);
+await Promise.all(chessLevels.map(l => insLevel.run(
+  l.id, l.order_index, l.title, l.lesson_title, l.lesson_body, l.math_connection
+)));
 
 // --- niveles de dominó ---
 const dominoLevels = [
@@ -50,10 +56,13 @@ const dominoLevels = [
     math_connection: 'Antes de jugar una ficha, suma los puntos de sus dos lados. Esa suma te ayuda a decidir qué ficha te conviene más soltar primero.'
   }
 ];
-const insLevelD = db.prepare(`INSERT OR IGNORE INTO levels
+const insLevelD = db.prepare(`INSERT INTO levels
   (id, game_id, order_index, title, lesson_title, lesson_body, math_connection)
-  VALUES (@id,'domino',@order_index,@title,@lesson_title,@lesson_body,@math_connection)`);
-dominoLevels.forEach(l => insLevelD.run(l));
+  VALUES (?,'domino',?,?,?,?,?)
+  ON CONFLICT DO NOTHING`);
+await Promise.all(dominoLevels.map(l => insLevelD.run(
+  l.id, l.order_index, l.title, l.lesson_title, l.lesson_body, l.math_connection
+)));
 
 // --- retos (challenge stage) ---
 const challenges = [
@@ -93,10 +102,13 @@ const challenges = [
     hint: 'Suma los dos números de la ficha.', points: 15
   }
 ];
-const insChallenge = db.prepare(`INSERT OR IGNORE INTO challenges
+const insChallenge = db.prepare(`INSERT INTO challenges
   (id, level_id, order_index, topic, prompt, options, correct_index, explanation, hint, points)
-  VALUES (@id,@level_id,@order_index,@topic,@prompt,@options,@correct_index,@explanation,@hint,@points)`);
-challenges.forEach(c => insChallenge.run(c));
+  VALUES (?,?,?,?,?,?,?,?,?,?)
+  ON CONFLICT DO NOTHING`);
+await Promise.all(challenges.map(c => insChallenge.run(
+  c.id, c.level_id, c.order_index, c.topic, c.prompt, c.options, c.correct_index, c.explanation, c.hint, c.points
+)));
 
 // --- diagnóstico inicial ---
 const diag = [
@@ -106,9 +118,12 @@ const diag = [
   { id: 'd4', order_index: 4, topic: 'Dominó básico', prompt: '¿Cuántas fichas tiene un dominó doble-seis completo?', options: JSON.stringify(['28','24','36','21']), correct_index: 0 },
   { id: 'd5', order_index: 5, topic: 'Lógica', prompt: 'Si hoy es martes, ¿qué día será dentro de 3 días?', options: JSON.stringify(['Jueves','Viernes','Sábado','Miércoles']), correct_index: 1 }
 ];
-const insDiag = db.prepare(`INSERT OR IGNORE INTO diagnostic_questions
-  (id, order_index, topic, prompt, options, correct_index) VALUES (@id,@order_index,@topic,@prompt,@options,@correct_index)`);
-diag.forEach(d => insDiag.run(d));
+const insDiag = db.prepare(`INSERT INTO diagnostic_questions
+  (id, order_index, topic, prompt, options, correct_index) VALUES (?,?,?,?,?,?)
+  ON CONFLICT DO NOTHING`);
+await Promise.all(diag.map(d => insDiag.run(
+  d.id, d.order_index, d.topic, d.prompt, d.options, d.correct_index
+)));
 
 // --- logros ---
 const achievements = [
@@ -116,23 +131,29 @@ const achievements = [
   { id: 'chess-knight', name: 'Caballo saltarín', icon: '♞', description: 'Aprendiste el movimiento del caballo.' },
   { id: 'domino-double', name: 'Doble seis', icon: '🁛', description: 'Superaste el reto de probabilidad del dominó.' }
 ];
-const insAch = db.prepare('INSERT OR IGNORE INTO achievements (id, name, icon, description) VALUES (@id,@name,@icon,@description)');
-achievements.forEach(a => insAch.run(a));
+const insAch = db.prepare('INSERT INTO achievements (id, name, icon, description) VALUES (?,?,?,?) ON CONFLICT DO NOTHING');
+await Promise.all(achievements.map(a => insAch.run(a.id, a.name, a.icon, a.description)));
 
 // --- inicializar progreso de estudiantes de ejemplo: nivel 1 desbloqueado ---
-const students = db.prepare("SELECT id FROM users WHERE role='student'").all();
-const levels = db.prepare('SELECT id, game_id, order_index FROM levels').all();
-const insProg = db.prepare(`INSERT OR IGNORE INTO student_progress (user_id, game_id, level_id, unlocked) VALUES (?,?,?,?)`);
-const insPoints = db.prepare('INSERT OR IGNORE INTO student_points (user_id, total_points) VALUES (?, 0)');
-students.forEach(s => {
-  insPoints.run(s.id);
-  levels.forEach(l => {
-    insProg.run(s.id, l.game_id, l.id, l.order_index === 1 ? 1 : 0);
-  });
-});
+const students = await db.prepare("SELECT id FROM users WHERE role='student'").all();
+const levels = await db.prepare('SELECT id, game_id, order_index FROM levels').all();
+const insProg = db.prepare(`INSERT INTO student_progress (user_id, game_id, level_id, unlocked) VALUES (?,?,?,?) ON CONFLICT DO NOTHING`);
+const insPoints = db.prepare('INSERT INTO student_points (user_id, total_points) VALUES (?, 0) ON CONFLICT DO NOTHING');
+await Promise.all(students.flatMap(s => [
+  insPoints.run(s.id),
+  ...levels.map(l => insProg.run(s.id, l.game_id, l.id, l.order_index === 1 ? 1 : 0))
+]));
 
 console.log('Seed completado. Usuarios demo (contraseña: ludex123):');
 console.log(' - admin / ludex123 (administrador)');
 console.log(' - docente.6a / ludex123 (docente)');
 console.log(' - ana.martinez / ludex123 (estudiante)');
 console.log(' - luis.torres / ludex123 (estudiante)');
+}
+
+main()
+  .catch(error => {
+    console.error('No se pudo inicializar la base de datos:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => db.close());
