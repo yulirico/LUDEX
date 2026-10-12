@@ -82,8 +82,9 @@ router.post('/challenges/:id/attempt', asyncHandler(async (req, res) => {
 
   if (correct) {
     await db.prepare(`INSERT INTO student_points (user_id, total_points) VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET total_points = total_points + ?`)
-      .run(req.user.id, challenge.points, challenge.points);
+                ON CONFLICT(user_id) DO UPDATE
+                SET total_points = student_points.total_points + EXCLUDED.total_points`)
+      .run(req.user.id, challenge.points);
   }
 
   res.json({ correct, explanation: challenge.explanation, correct_index: challenge.correct_index });
